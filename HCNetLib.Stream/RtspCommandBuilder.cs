@@ -1,9 +1,8 @@
-﻿using System;
-using System.Collections.Generic;
+﻿using HCNetLib.Stream.Builder;
+using System;
 using System.Linq;
 using System.Net;
 using System.Web;
-using HCNetLib.Stream.Builder;
 
 namespace HCNetLib.Stream
 {
@@ -30,7 +29,7 @@ namespace HCNetLib.Stream
 
         public RtspCommandBuilder WithAuthentication(string username, string password)
         {
-            Credential = new NetworkCredential(HttpUtility.UrlEncode(username), 
+            Credential = new NetworkCredential(HttpUtility.UrlEncode(username),
                 HttpUtility.UrlEncode(password));
             return this;
         }

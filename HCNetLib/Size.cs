@@ -1,4 +1,4 @@
-﻿namespace HCNetLib.Stream
+﻿namespace HCNetLib
 {
     public struct Size
     {
