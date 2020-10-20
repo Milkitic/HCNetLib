@@ -1,17 +1,17 @@
 ﻿using System.Collections.Generic;
 using System.Linq;
 
-namespace HCNetLib.Stream.Builder.NVIDIA
+namespace HCNetLib.Stream.Builder.Intel
 {
-    public class NvDecoderOptions : IDecoderOptions
+    public class IntelDecoderOptions : IDecoderOptions
     {
         private List<KeyValuePair<string, string>> _settings = new List<KeyValuePair<string, string>>();
 
-        public NvDecoderOptions()
+        public IntelDecoderOptions()
         {
         }
 
-        public NvDecoderOptions(string option, string value)
+        public IntelDecoderOptions(string option, string value)
         {
             _settings.Add(new KeyValuePair<string, string>(option, value));
         }
@@ -20,12 +20,12 @@ namespace HCNetLib.Stream.Builder.NVIDIA
             _settings.Select(k => $"{k.Key} {k.Value}")
         );
 
-        public NvDecoderOptions WithGPU(int index)
+        public IntelDecoderOptions WithGPU(int index)
         {
             _settings.Add(new KeyValuePair<string, string>("-gpu", index.ToString()));
             return this;
         }
 
-        public static NvDecoderOptions Default => new NvDecoderOptions();
+        public static IntelDecoderOptions Default => new IntelDecoderOptions();
     }
 }

@@ -16,9 +16,9 @@ namespace HCNetLib.Stream.Builder.CPU
             _settings.Add(new KeyValuePair<string, string>(option, value));
         }
 
-        public string Value => " " + string.Join(" ",
+        public string Value => string.Join(" ",
             _settings.Select(k => $"{k.Key} {k.Value}")
-        ) + " ";
+        );
 
         public DefaultEncoderOptions WithPreset(IPresetValue preset)
         {

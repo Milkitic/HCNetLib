@@ -1,17 +1,18 @@
 ﻿using System.Collections.Generic;
 using System.Linq;
 
-namespace HCNetLib.Stream.Builder.CPU
+namespace HCNetLib.Stream.Builder.AMD
 {
-    public class DefaultDecoderOptions : IDecoderOptions
+    // currently no specialized decoder of amd is available
+    internal class AmdDecoderOptions : IDecoderOptions
     {
         private List<KeyValuePair<string, string>> _settings = new List<KeyValuePair<string, string>>();
 
-        public DefaultDecoderOptions()
+        public AmdDecoderOptions()
         {
         }
 
-        public DefaultDecoderOptions(string option, string value)
+        public AmdDecoderOptions(string option, string value)
         {
             _settings.Add(new KeyValuePair<string, string>(option, value));
         }
@@ -19,7 +20,5 @@ namespace HCNetLib.Stream.Builder.CPU
         public string Value => string.Join(" ",
             _settings.Select(k => $"{k.Key} {k.Value}")
         );
-
-        public static DefaultDecoderOptions Default => new DefaultDecoderOptions();
     }
 }

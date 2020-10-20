@@ -1,17 +1,17 @@
 ﻿using System.Collections.Generic;
 using System.Linq;
 
-namespace HCNetLib.Stream.Builder.NVIDIA
+namespace HCNetLib.Stream.Builder.AMD
 {
-    public class NvEncoderOptions : IEncoderOptions
+    public class AmdEncoderOptions : IEncoderOptions
     {
         private List<KeyValuePair<string, string>> _settings = new List<KeyValuePair<string, string>>();
 
-        public NvEncoderOptions()
+        public AmdEncoderOptions()
         {
         }
 
-        public NvEncoderOptions(string option, string value)
+        public AmdEncoderOptions(string option, string value)
         {
             _settings.Add(new KeyValuePair<string, string>(option, value));
         }
@@ -20,33 +20,33 @@ namespace HCNetLib.Stream.Builder.NVIDIA
             _settings.Select(k => $"{k.Key} {k.Value}")
         );
 
-        public NvEncoderOptions WithGPU(int index)
+        public AmdEncoderOptions WithGPU(int index)
         {
             _settings.Add(new KeyValuePair<string, string>("-gpu", index.ToString()));
             return this;
         }
 
-        public NvEncoderOptions WithPreset(IPresetValue preset)
+        public AmdEncoderOptions WithPreset(IPresetValue preset)
         {
             _settings.Add(new KeyValuePair<string, string>("-preset", preset.Value));
             return this;
         }
 
-        public NvEncoderOptions WithVsync(int value)
+        public AmdEncoderOptions WithVsync(int value)
         {
             _settings.Add(new KeyValuePair<string, string>("-vsync", value.ToString()));
             return this;
         }
 
-        public NvEncoderOptions WithForcingAsIDRFrames()
+        public AmdEncoderOptions WithForcingAsIDRFrames()
         {
             _settings.Add(new KeyValuePair<string, string>("-forced-idr", "1"));
             return this;
         }
 
-        public static NvEncoderOptions Default =>
-            new NvEncoderOptions()
-                .WithPreset(NvEncoderPresetValue.HighPerformance)
+        public static AmdEncoderOptions Default =>
+            new AmdEncoderOptions()
+                .WithPreset(AmdEncoderPresetValue.HighPerformance)
                 .WithVsync(0)
                 .WithForcingAsIDRFrames();
     }

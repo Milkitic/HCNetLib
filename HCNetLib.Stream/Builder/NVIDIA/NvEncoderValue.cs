@@ -9,6 +9,6 @@
 
         public string Value { get; }
 
-        public static NvEncoderValue H264 => new NvEncoderValue("h264_nevnc");
+        public static NvEncoderValue H264 => new NvEncoderValue("h264_nvenc");
     }
 }

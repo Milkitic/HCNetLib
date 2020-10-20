@@ -30,7 +30,8 @@ namespace HCNetLib.Stream
 
         public RtspCommandBuilder WithAuthentication(string username, string password)
         {
-            Credential = new NetworkCredential(HttpUtility.UrlEncode(username), HttpUtility.UrlEncode(password));
+            Credential = new NetworkCredential(HttpUtility.UrlEncode(username), 
+                HttpUtility.UrlEncode(password));
             return this;
         }
 
@@ -95,9 +96,7 @@ namespace HCNetLib.Stream
                 : $"-s {OutputResolution.Value.Width}x{OutputResolution.Value.Height}";
             var keyFrameCmds = KeyFrames == null
                 ? null
-                : $"-forced-idr 1 " +
-                  $"-force_key_frames \"expr: gte(t, n_forced * {KeyFrames.Value})\"";
-            var vsyncCmd = "-vsync 0";
+                : $"-force_key_frames \"expr: gte(t, n_forced * {KeyFrames.Value})\"";
             var encoderCmd = EncodingSettings?.Encoder == null
                 ? null
                 : ("-c:v " + EncodingSettings.Encoder?.Value + " ");
@@ -125,12 +124,10 @@ namespace HCNetLib.Stream
                 inputCmd,
                 resolutionCmd,
                 keyFrameCmds,
-                vsyncCmd,
                 encoderCmd,
                 encoderOptionsCmd,
                 hlsTimeCmds,
                 hlsListCmds,
-                //presetCmd,
                 fileCmd
             };
             var args = string.Join(" ", arr.Where(k => k != null));
