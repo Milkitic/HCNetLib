@@ -21,9 +21,9 @@ namespace HCNetLib.Stream
         public string BaseDir { get; set; }
         public HashSet<StreamTask> StreamTasks { get; set; } = new HashSet<StreamTask>();
 
-        public async Task<StreamTask> AddTask(string host, int channel, BitStream bitStream, Size convertResolution)
+        public async Task<StreamTask> AddTask(string host, int channel, BitStream bitStream, Size convertResolution, int port = 554)
         {
-            var streamTask = new StreamTask(host, channel, bitStream, BaseDir, this);
+            var streamTask = new StreamTask(host, port, channel, bitStream, BaseDir, this);
 
             if (StreamTasks.TryGetValue(streamTask, out var task))
             {
@@ -40,9 +40,9 @@ namespace HCNetLib.Stream
             return streamTask;
         }
 
-        public async Task<StreamTask> RemoveTask(string host, int channel, BitStream bitStream)
+        public async Task<StreamTask> RemoveTask(string host, int port, int channel, BitStream bitStream)
         {
-            var streamTask = new StreamTask(host, channel, bitStream, BaseDir, this);
+            var streamTask = new StreamTask(host, port, channel, bitStream, BaseDir, this);
 
             if (StreamTasks.TryGetValue(streamTask, out var task))
             {

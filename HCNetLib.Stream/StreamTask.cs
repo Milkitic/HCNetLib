@@ -24,13 +24,15 @@ namespace HCNetLib.Stream
     public sealed class StreamTask
     {
         public event Action<StreamTask> ProcessExit;
+        private readonly int _port;
         private readonly string _baseDir;
         private RtspCommandBuilder _builder;
         private readonly StreamManagement _management;
         private Process _proc;
 
-        public StreamTask(string host, int channel, BitStream bitStream, string baseDir, StreamManagement management)
+        public StreamTask(string host, int port, int channel, BitStream bitStream, string baseDir, StreamManagement management)
         {
+            _port = port;
             _baseDir = baseDir;
             _management = management;
             Host = host;
@@ -61,7 +63,7 @@ namespace HCNetLib.Stream
             else if (File.Exists(filePath)) File.Delete(filePath);
 
             _builder = new RtspCommandBuilder()
-                .UseUri(Host, route: HikvisionRouteValue.FromSettings(Channel, BitStream))
+                .UseUri(Host, rtspPort: _port, route: HikvisionRouteValue.FromSettings(Channel, BitStream))
                 .WithAuthentication(username, password)
                 .WithHlsTime(1)
                 .WithHlsListSize(5)

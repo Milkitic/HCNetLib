@@ -1,10 +1,10 @@
-﻿using System;
+﻿using HCNetLib.Stream.Builder;
+using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
-using HCNetLib.Stream.Builder;
 
 namespace HCNetLib.Stream
 {
@@ -42,9 +42,10 @@ namespace HCNetLib.Stream
             });
         }
 
-        public async Task<StreamTask> AddTaskWithHeartBeat(string host, int channel, BitStream bitStream, Size convertResolution)
+        public async Task<StreamTask> AddTaskWithHeartBeat(string host, int channel, BitStream bitStream,
+            Size convertResolution, int port = 554)
         {
-            var task = await base.AddTask(host, channel, bitStream, convertResolution);
+            var task = await base.AddTask(host, channel, bitStream, convertResolution, port);
             if (_heartBeatDictionary.ContainsKey(task))
                 return _heartBeatDictionary.Keys.First(k => k.Equals(task));
             if (_heartBeatDictionary.TryAdd(task, DateTime.Now))
@@ -59,9 +60,9 @@ namespace HCNetLib.Stream
             return task;
         }
 
-        public void HeartBeat(string host, int channel, BitStream bitStream)
+        public void HeartBeat(string host, int port, int channel, BitStream bitStream)
         {
-            var streamTask = new StreamTask(host, channel, bitStream, BaseDir, this);
+            var streamTask = new StreamTask(host, port, channel, bitStream, BaseDir, this);
             if (_heartBeatDictionary.ContainsKey(streamTask))
             {
                 _heartBeatDictionary[streamTask] = DateTime.Now;
