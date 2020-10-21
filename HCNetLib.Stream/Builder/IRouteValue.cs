@@ -4,9 +4,4 @@
     {
         public string Route { get; }
     }
-
-    public enum BitStream
-    {
-        Main, Sub, Third
-    }
 }

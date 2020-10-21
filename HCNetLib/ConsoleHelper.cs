@@ -37,7 +37,7 @@ namespace HCNetLib
 
                     Thread.Sleep(3);
                 }
-            });
+            }, TaskCreationOptions.LongRunning);
 
             AppDomain.CurrentDomain.ProcessExit += (s, e) =>
             {

@@ -8,18 +8,18 @@ using System.Threading.Tasks;
 
 namespace HCNetLib.Stream
 {
-    public class AutoStreamManagement : StreamManagement, IDisposable
+    public class AutoStreamManagement : StreamManagement
     {
         private readonly TimeSpan _overtime;
 
-        private ConcurrentDictionary<StreamTask, DateTime> _heartBeatDictionary =
-            new ConcurrentDictionary<StreamTask, DateTime>();
+        private ConcurrentDictionary<RtspIdentity, DateTime> _heartBeatDictionary =
+            new ConcurrentDictionary<RtspIdentity, DateTime>();
 
         private Task _autoManagementTask;
         private CancellationTokenSource _autoManagementCts;
 
-        public AutoStreamManagement(string baseDir, string username, string password, TimeSpan overtime) :
-            base(baseDir, username, password)
+        public AutoStreamManagement(string baseDir, TimeSpan overtime, string defaultUsername = null,
+            string defaultPassword = null) : base(baseDir, defaultUsername, defaultPassword)
         {
             _overtime = overtime;
             _autoManagementCts = new CancellationTokenSource();
@@ -32,46 +32,54 @@ namespace HCNetLib.Stream
                     {
                         if (DateTime.Now - keyValuePair.Value > _overtime)
                         {
-                            await keyValuePair.Key.StopAsync();
-                            ConsoleHelper.WriteWarn("Auto dispose task: " + keyValuePair.Key.Module, "auto_management");
+                            var streamTask = StreamTasks[keyValuePair.Key];
+                            await streamTask.StopAsync();
+                            _heartBeatDictionary.TryRemove(keyValuePair.Key, out _);
+                            ConsoleHelper.WriteWarn("Auto dispose task: " + streamTask.Module, "auto_management");
                         }
                     }
 
                     Thread.Sleep(1000);
                 }
-            });
+            }, TaskCreationOptions.LongRunning);
         }
 
-        public async Task<StreamTask> AddTaskWithHeartBeat(string host, int channel, BitStream bitStream,
-            Size convertResolution, int port = 554)
+        public async Task<StreamTask> AddTaskWithHeartBeat(RtspIdentity rtspIdentity, Size convertResolution, RtspAuthentication authentication = null)
         {
-            var task = await base.AddTask(host, channel, bitStream, convertResolution, port);
-            if (_heartBeatDictionary.ContainsKey(task))
-                return _heartBeatDictionary.Keys.First(k => k.Equals(task));
-            if (_heartBeatDictionary.TryAdd(task, DateTime.Now))
+            var task = await base.AddTask(rtspIdentity, convertResolution, authentication);
+
+            if (_heartBeatDictionary.TryAdd(rtspIdentity, DateTime.Now))
             {
                 task.ProcessExit += StreamTask_ProcessExit;
             }
             else
             {
-                throw new Exception("add failed");
+                if (!_heartBeatDictionary.ContainsKey(rtspIdentity))
+                    ConsoleHelper.WriteWarn("Add auto dispose task failed", "auto_management");
             }
 
             return task;
         }
 
-        public void HeartBeat(string host, int port, int channel, BitStream bitStream)
+        public void HeartBeat(RtspIdentity rtspIdentity)
         {
-            var streamTask = new StreamTask(host, port, channel, bitStream, BaseDir, this);
-            if (_heartBeatDictionary.ContainsKey(streamTask))
+            if (_heartBeatDictionary.TryGetValue(rtspIdentity, out var old))
             {
-                _heartBeatDictionary[streamTask] = DateTime.Now;
+                var now = DateTime.Now;
+                _heartBeatDictionary[rtspIdentity] = now;
+                //ConsoleHelper.WriteInfo(
+                //    "Update task `" + rtspIdentity + "` expire time from " + old.ToLongTimeString() + " to " +
+                //    now.ToLongTimeString(), "auto_management");
+            }
+            else
+            {
+                ConsoleHelper.WriteWarn("HeartBeat error: cannot find task `" + rtspIdentity + "`", "auto_management");
             }
         }
 
         private void StreamTask_ProcessExit(StreamTask obj)
         {
-            _heartBeatDictionary.Remove(obj, out _);
+            _heartBeatDictionary.TryRemove(obj.Identity, out _);
         }
 
         public override void Dispose()

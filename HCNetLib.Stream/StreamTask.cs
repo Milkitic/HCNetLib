@@ -21,30 +21,31 @@ namespace HCNetLib.Stream
     // ffmpeg -hide_banner -encoders | Select-String AMD
     // ffmpeg -hide_banner -h encoder=h264_nvenc
     // ffmpeg -hide_banner -h encoder=h264_amf
-    public sealed class StreamTask
+    public sealed class StreamTask : IEquatable<StreamTask>
     {
         public event Action<StreamTask> ProcessExit;
-        private readonly int _port;
-        private readonly string _baseDir;
         private RtspCommandBuilder _builder;
         private readonly StreamManagement _management;
         private Process _proc;
+        private bool _isPreparing;
+        private TaskCompletionSource<object> _readyTcs;
 
-        public StreamTask(string host, int port, int channel, BitStream bitStream, string baseDir, StreamManagement management)
+        public string FilePath => _builder.SavePath;
+
+        public StreamTask(RtspIdentity rtspIdentity, StreamManagement management)
         {
-            _port = port;
-            _baseDir = baseDir;
+            Identity = rtspIdentity;
             _management = management;
-            Host = host;
-            Channel = channel;
-            BitStream = bitStream;
         }
 
-        public string Host { get; }
-        public int Channel { get; }
-        public BitStream BitStream { get; }
+        public RtspIdentity Identity { get; }
+        public bool IsRunning => _isPreparing || _proc != null && _proc.Id > 0 && !_proc.HasExited;
 
-        public bool IsRunning => _proc != null && !_proc.HasExited;
+        public async Task WaitForReading()
+        {
+            if (_isPreparing && _readyTcs != null)
+                await _readyTcs.Task;
+        }
 
         /// <summary>
         /// async back when start encoding
@@ -53,133 +54,143 @@ namespace HCNetLib.Stream
         /// <param name="password"></param>
         /// <param name="resolution"></param>
         /// <returns></returns>
-        public Task RunAsync(string username, string password, Size resolution)
+        public async Task RunAsync(string username, string password, Size resolution)
         {
-            if (IsRunning) return Task.CompletedTask;
-
-            var baseDir = Path.Combine(_baseDir, Channel.ToString(), ((int)BitStream).ToString());
-            var filePath = Path.Combine(baseDir, "realplay.m3u8");
-            if (!Directory.Exists(baseDir)) Directory.CreateDirectory(baseDir);
-            else if (File.Exists(filePath)) File.Delete(filePath);
-
-            _builder = new RtspCommandBuilder()
-                .UseUri(Host, rtspPort: _port, route: HikvisionRouteValue.FromSettings(Channel, BitStream))
-                .WithAuthentication(username, password)
-                .WithHlsTime(1)
-                .WithHlsListSize(5)
-                .WithOutputResolution(resolution.Width, resolution.Height)
-                .ToM3U8File(filePath);
-
-            BuildEncoderAndDecoder(resolution);
-
-            if (_builder.EncodingSettings == null)
-                throw new Exception("None of available encoders can be found.");
-            if (_builder.DecodingSettings == null)
-                throw new Exception("None of available decoders can be found.");
-
-            var args = _builder.Build();
-            WriteInfo("args: " + args);
-
-            _proc = new Process
+            if (IsRunning) return;
+            _isPreparing = true;
+            try
             {
-                EnableRaisingEvents = true,
-                StartInfo = new ProcessStartInfo
+                _readyTcs = new TaskCompletionSource<object>();
+                var baseDir = Path.Combine(_management.BaseDir, Identity.Channel.ToString(), ((int)Identity.BitStream).ToString());
+                var filePath = Path.Combine(baseDir, "realplay.m3u8");
+                if (!Directory.Exists(baseDir)) Directory.CreateDirectory(baseDir);
+                else if (File.Exists(filePath)) File.Delete(filePath);
+
+                _builder = new RtspCommandBuilder()
+                    .UseUri(Identity.Host, Identity.Port,
+                        HikvisionRouteValue.FromSettings(Identity.Channel, Identity.BitStream))
+                    .WithAuthentication(username, password)
+                    .WithHlsTime(1)
+                    .WithHlsListSize(5)
+                    .WithOutputResolution(resolution.Width, resolution.Height)
+                    .ToM3U8File(filePath);
+
+                BuildEncoderAndDecoder(resolution);
+
+                if (_builder.EncodingSettings == null)
+                    throw new Exception("None of available encoders can be found.");
+                if (_builder.DecodingSettings == null)
+                    throw new Exception("None of available decoders can be found.");
+
+                var args = _builder.Build();
+                WriteInfo("args: " + args);
+
+                _proc = new Process
                 {
-                    FileName = "ffmpeg",
-                    Arguments = "-loglevel level -hide_banner " + args,
-                    RedirectStandardInput = true,
-                    RedirectStandardOutput = true,
-                    RedirectStandardError = true,
-                    WindowStyle = ProcessWindowStyle.Hidden,
-                    CreateNoWindow = true,
-                    UseShellExecute = false
-                }
-            };
-
-            var o = new Regex(@"\[hls @ (.+)\] Opening '(.+)realplay\.m3u8\.tmp' for writing");
-            var tcs = new TaskCompletionSource<object>();
-
-            string errMsg = null;
-            string innerErrMsg = null;
-
-            _proc.OutputDataReceived += OnErrorDataReceived;
-            _proc.ErrorDataReceived += OnErrorDataReceived;
-
-            _proc.Start();
-            _proc.BeginOutputReadLine();
-            _proc.BeginErrorReadLine();
-
-            new Task(async () =>
-            {
-                await _proc.WaitForExitAsync();
-
-                await Task.Delay(100);
-                var exitCode = _proc.ExitCode;
-
-                if (exitCode != 0)
-                {
-                    WriteError((innerErrMsg == null
-                            ? errMsg
-                            : (errMsg == null
-                                ? innerErrMsg
-                                : innerErrMsg + " -> " + errMsg)
-                        ) ?? $"Process exited unexpectedly. ({exitCode})");
-                    //throw new Exception(errMsg ?? $"Process exited unexpectedly. ({exitCode})");
-                }
-
-                _builder = null;
-                _proc = null;
-                ProcessExit?.Invoke(this);
-            }).Start();
-
-            return tcs.Task;
-
-            void OnErrorDataReceived(object obj, DataReceivedEventArgs e)
-            {
-                if (e.Data == null) return;
-                var match = o.Match(e.Data);
-                if (match.Success)
-                {
-                    if (tcs.Task?.IsCompleted != true)
+                    EnableRaisingEvents = true,
+                    StartInfo = new ProcessStartInfo
                     {
-                        ConsoleHelper.WriteInfo("Encoding Started", Module);
-                        tcs.SetResult(null);
+                        FileName = "ffmpeg",
+                        Arguments = "-loglevel level -hide_banner " + args,
+                        RedirectStandardInput = true,
+                        RedirectStandardOutput = true,
+                        RedirectStandardError = true,
+                        //WindowStyle = ProcessWindowStyle.Hidden,
+                        CreateNoWindow = false,
+                        UseShellExecute = false
+                    }
+                };
+
+                var o = new Regex(@"\[hls @ (.+)\] Opening '(.+)realplay\.m3u8\.tmp' for writing");
+
+                string errMsg = null;
+                string innerErrMsg = null;
+
+                _proc.OutputDataReceived += OnErrorDataReceived;
+                _proc.ErrorDataReceived += OnErrorDataReceived;
+
+                _proc.Start();
+                _proc.BeginOutputReadLine();
+                _proc.BeginErrorReadLine();
+
+                //await Task.Delay(100);
+                new Task(() =>
+                {
+                    _proc.WaitForExit();
+
+                    Thread.Sleep(100);
+                    var exitCode = _proc.ExitCode;
+
+                    if (exitCode != 0)
+                    {
+                        WriteError((innerErrMsg == null
+                                ? errMsg
+                                : (errMsg == null
+                                    ? innerErrMsg
+                                    : innerErrMsg + " -> " + errMsg)
+                            ) ?? $"Process exited unexpectedly. ({exitCode})");
+                        //throw new Exception(errMsg ?? $"Process exited unexpectedly. ({exitCode})");
                     }
 
-                    return;
-                }
+                    _builder = null;
+                    _proc = null;
+                    ProcessExit?.Invoke(this);
+                }).Start();
 
-                if (e.Data.StartsWith("[error] ") || e.Data.StartsWith("[fatal] ") || e.Data.StartsWith("[panic] "))
-                {
-                    var i = e.Data.IndexOf("] ", StringComparison.Ordinal);
-                    errMsg = e.Data.Substring(i + 2);
-                    WriteError(errMsg);
-                    if (tcs.Task?.IsCompleted != true)
-                        tcs.SetException(new Exception("Preload exception: " + errMsg));
-                    return;
-                }
+                await _readyTcs.Task;
 
-                if (e.Data.Contains(" [error] "))
+                void OnErrorDataReceived(object obj, DataReceivedEventArgs e)
                 {
-                    var i = e.Data.IndexOf(" [error] ", StringComparison.Ordinal);
-                    innerErrMsg = e.Data.Substring(i + 9);
-                    if (tcs.Task?.IsCompleted != true)
-                        tcs.SetException(new Exception("Preload exception: " + innerErrMsg));
+                    //Console.WriteLine(e.Data);
+                    if (e.Data == null) return;
+                    var match = o.Match(e.Data);
+                    if (match.Success)
+                    {
+                        if (_readyTcs.Task?.IsCompleted != true)
+                        {
+                            ConsoleHelper.WriteInfo("Encoding Started", Module);
+                            _readyTcs.SetResult(null);
+                        }
+
+                        return;
+                    }
+
+                    if (e.Data.StartsWith("[error] ") || e.Data.StartsWith("[fatal] ") || e.Data.StartsWith("[panic] "))
+                    {
+                        var i = e.Data.IndexOf("] ", StringComparison.Ordinal);
+                        errMsg = e.Data.Substring(i + 2);
+                        WriteError(errMsg);
+                        if (_readyTcs.Task?.IsCompleted != true && !e.Data.StartsWith("[error] "))
+                            _readyTcs.SetException(new Exception("Preload exception: " + errMsg));
+                        return;
+                    }
+
+                    if (e.Data.Contains(" [error] "))
+                    {
+                        var i = e.Data.IndexOf(" [error] ", StringComparison.Ordinal);
+                        innerErrMsg = e.Data.Substring(i + 9);
+                        //if (tcs.Task?.IsCompleted != true)
+                        //    tcs.SetException(new Exception("Preload exception: " + innerErrMsg));
+                    }
+                    else if (e.Data.Contains(" [fatal] "))
+                    {
+                        var i = e.Data.IndexOf(" [fatal] ", StringComparison.Ordinal);
+                        innerErrMsg = e.Data.Substring(i + 9);
+                        if (_readyTcs.Task?.IsCompleted != true)
+                            _readyTcs.SetException(new Exception("Preload exception: " + innerErrMsg));
+                    }
+                    else if (e.Data.Contains(" [panic] "))
+                    {
+                        var i = e.Data.IndexOf(" [panic] ", StringComparison.Ordinal);
+                        innerErrMsg = e.Data.Substring(i + 9);
+                        if (_readyTcs.Task?.IsCompleted != true)
+                            _readyTcs.SetException(new Exception("Preload exception: " + innerErrMsg));
+                    }
                 }
-                else if (e.Data.Contains(" [fatal] "))
-                {
-                    var i = e.Data.IndexOf(" [fatal] ", StringComparison.Ordinal);
-                    innerErrMsg = e.Data.Substring(i + 9);
-                    if (tcs.Task?.IsCompleted != true)
-                        tcs.SetException(new Exception("Preload exception: " + innerErrMsg));
-                }
-                else if (e.Data.Contains(" [panic] "))
-                {
-                    var i = e.Data.IndexOf(" [panic] ", StringComparison.Ordinal);
-                    innerErrMsg = e.Data.Substring(i + 9);
-                    if (tcs.Task?.IsCompleted != true)
-                        tcs.SetException(new Exception("Preload exception: " + innerErrMsg));
-                }
+            }
+            finally
+            {
+                _isPreparing = false;
             }
         }
 
@@ -296,25 +307,25 @@ namespace HCNetLib.Stream
 
         private int GetUsingNvCount()
         {
-            var nvGpuCounts = _management.StreamTasks
+            var nvGpuCounts = _management.StreamTasks.Values
                 .Where(k => k.IsRunning)
-                .Count(k => k._builder?.EncodingSettings.Manufacture == Manufacture.NVIDIA);
+                .Count(k => k._builder?.EncodingSettings?.Manufacture == Manufacture.NVIDIA);
             return nvGpuCounts;
         }
 
         private int GetUsingAmdCount()
         {
-            var nvGpuCounts = _management.StreamTasks
+            var nvGpuCounts = _management.StreamTasks.Values
                 .Where(k => k.IsRunning)
-                .Count(k => k._builder?.EncodingSettings.Manufacture == Manufacture.AMD);
+                .Count(k => k._builder?.EncodingSettings?.Manufacture == Manufacture.AMD);
             return nvGpuCounts;
         }
 
         private int GetUsingIntelCount()
         {
-            var intelGpuCounts = _management.StreamTasks
+            var intelGpuCounts = _management.StreamTasks.Values
                 .Where(k => k.IsRunning)
-                .Count(k => k._builder?.EncodingSettings.Manufacture == Manufacture.INTEL);
+                .Count(k => k._builder?.EncodingSettings?.Manufacture == Manufacture.INTEL);
             return intelGpuCounts;
         }
 
@@ -335,33 +346,12 @@ namespace HCNetLib.Stream
 
         private void BuildIntel(int nvCount)
         {
-            if (nvCount > 0)
-                _builder.UseNvidiaDecodingSettings(NvDecodingSettings.Default);
-            else
-                _builder.UseIntelDecodingSettings(IntelDecodingSettings.Default);
+            //if (nvCount > 0)
+            //    _builder.UseNvidiaDecodingSettings(NvDecodingSettings.Default);
+            //else
+            _builder.UseDefaultDecodingSettings(DefaultDecodingSettings.Default);
             _builder.UseIntelEncodingSettings(IntelEncodingSettings.Default)
                 .WithHlsTime(2);
-        }
-
-        public override bool Equals(object obj)
-        {
-            return obj is StreamTask st ? this.Equals(st) : base.Equals(obj);
-        }
-
-        public bool Equals(StreamTask other)
-        {
-            return string.Equals(Host, other.Host, StringComparison.OrdinalIgnoreCase) &&
-                   Channel == other.Channel &&
-                   BitStream == other.BitStream;
-        }
-
-        public override int GetHashCode()
-        {
-            var hashCode = new HashCode();
-            hashCode.Add(Host, StringComparer.OrdinalIgnoreCase);
-            hashCode.Add(Channel);
-            hashCode.Add(BitStream);
-            return hashCode.ToHashCode();
         }
 
         private void WriteInfo(string data)
@@ -379,6 +369,33 @@ namespace HCNetLib.Stream
             ConsoleHelper.WriteWarn(data, Module);
         }
 
-        internal string Module => $"task @ {Host}/{Channel}0{(int)BitStream + 1}";
+        public override bool Equals(object obj)
+        {
+            return ReferenceEquals(this, obj) || obj is StreamTask other && Equals(other);
+        }
+
+        public bool Equals(StreamTask other)
+        {
+            if (ReferenceEquals(null, other)) return false;
+            if (ReferenceEquals(this, other)) return true;
+            return Equals(Identity, other.Identity) && Equals(_builder, other._builder) && Equals(_management, other._management) && Equals(_proc, other._proc);
+        }
+
+        public override int GetHashCode()
+        {
+            return HashCode.Combine(Identity, _builder, _management, _proc);
+        }
+
+        public static bool operator ==(StreamTask left, StreamTask right)
+        {
+            return Equals(left, right);
+        }
+
+        public static bool operator !=(StreamTask left, StreamTask right)
+        {
+            return !Equals(left, right);
+        }
+
+        internal string Module => $"task @ {Identity}";
     }
 }

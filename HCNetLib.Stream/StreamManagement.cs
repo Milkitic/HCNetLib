@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Concurrent;
 using HCNetLib.Stream.Builder;
 using System.Collections.Generic;
 using System.Linq;
@@ -8,43 +9,57 @@ namespace HCNetLib.Stream
 {
     public class StreamManagement : IDisposable
     {
-        protected readonly string Username;
-        protected readonly string Password;
+        protected readonly string DefaultUsername;
+        protected readonly string DefaultPassword;
 
-        public StreamManagement(string baseDir, string username, string password)
+        public StreamManagement(string baseDir, string defaultUsername = null, string defaultPassword = null)
         {
-            Username = username;
-            Password = password;
+            DefaultUsername = defaultUsername;
+            DefaultPassword = defaultPassword;
             BaseDir = baseDir;
         }
 
         public string BaseDir { get; set; }
-        public HashSet<StreamTask> StreamTasks { get; set; } = new HashSet<StreamTask>();
 
-        public async Task<StreamTask> AddTask(string host, int channel, BitStream bitStream, Size convertResolution, int port = 554)
+        public ConcurrentDictionary<RtspIdentity, StreamTask> StreamTasks { get; set; } =
+            new ConcurrentDictionary<RtspIdentity, StreamTask>();
+
+        public async Task<StreamTask> AddTask(RtspIdentity rtspIdentity, Size convertResolution,
+            RtspAuthentication authentication)
         {
-            var streamTask = new StreamTask(host, port, channel, bitStream, BaseDir, this);
-
-            if (StreamTasks.TryGetValue(streamTask, out var task))
+            if (StreamTasks.TryGetValue(rtspIdentity, out var streamTask))
             {
-                if (task.IsRunning) return task;
-                streamTask = task;
+                if (streamTask.IsRunning) return streamTask;
             }
             else
             {
-                StreamTasks.Add(streamTask);
+                streamTask = new StreamTask(rtspIdentity, this);
+                while (!StreamTasks.TryAdd(rtspIdentity, streamTask))
+                {
+                }
             }
 
-            await streamTask.RunAsync(Username, Password, convertResolution);
-            streamTask.ProcessExit += StreamTask_ProcessExit;
+            if (!streamTask.IsRunning)
+            {
+                try
+                {
+                    await streamTask.RunAsync(DefaultUsername ?? authentication.Credential.UserName, DefaultPassword ?? authentication.Credential.Password, convertResolution);
+                }
+                catch (Exception ex)
+                {
+                    StreamTasks.TryRemove(rtspIdentity, out _);
+                    throw;
+                }
+
+                streamTask.ProcessExit += StreamTask_ProcessExit;
+            }
+
             return streamTask;
         }
 
-        public async Task<StreamTask> RemoveTask(string host, int port, int channel, BitStream bitStream)
+        public async Task<StreamTask> RemoveTask(RtspIdentity rtspIdentity)
         {
-            var streamTask = new StreamTask(host, port, channel, bitStream, BaseDir, this);
-
-            if (StreamTasks.TryGetValue(streamTask, out var task))
+            if (StreamTasks.TryGetValue(rtspIdentity, out var task))
             {
                 await task.StopAsync();
                 return task;
@@ -58,12 +73,14 @@ namespace HCNetLib.Stream
 
         private void StreamTask_ProcessExit(StreamTask obj)
         {
-            StreamTasks.Remove(obj);
+            while (!StreamTasks.TryRemove(obj.Identity, out _))
+            {
+            }
         }
 
         public virtual void Dispose()
         {
-            foreach (var streamTask in StreamTasks.ToList())
+            foreach (var streamTask in StreamTasks.Values.ToList())
             {
                 streamTask.StopAsync().Wait();
             }

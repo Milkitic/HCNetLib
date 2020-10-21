@@ -19,15 +19,15 @@ namespace TestRtsp
             var password = file[1];
             var host = file[2];
 
-            var management = new AutoStreamManagement(@"e:\m3u8", username, password,
-                TimeSpan.FromSeconds(2000));
+            var management = new AutoStreamManagement(@"e:\m3u8", TimeSpan.FromSeconds(2000), 
+                username, password);
             //var size = new Size(1280, 720);
             var size = new Size(480, 270);
             for (int i = 1; i <= 8; i++)
             {
                 try
                 {
-                    management.AddTaskWithHeartBeat(host, i, BitStream.Sub, size);
+                    management.AddTaskWithHeartBeat(new RtspIdentity(host, i, BitStream.Sub), size);
                     //await management.RemoveTask(host, i, BitStream.Sub);
                 }
                 catch (Exception ex)
@@ -41,7 +41,7 @@ namespace TestRtsp
             {
                 try
                 {
-                    management.AddTaskWithHeartBeat(host, i, BitStream.Main, size);
+                    management.AddTaskWithHeartBeat(new RtspIdentity(host, i, BitStream.Main), size);
                 }
                 catch (Exception ex)
                 {
